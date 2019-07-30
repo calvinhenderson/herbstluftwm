@@ -63,6 +63,7 @@ SettingsPair g_settings[] = {
     SET_INT(    "frame_gap",                       5,           RELAYOUT      ),
     SET_INT(    "frame_padding",                   0,           RELAYOUT      ),
     SET_INT(    "window_gap",                      0,           RELAYOUT      ),
+    SET_INT(    "window_radius",                   0,           FR_COLORS     ),
     SET_INT(    "snap_distance",                   10,          NULL          ),
     SET_INT(    "snap_gap",                        5,           NULL          ),
     SET_INT(    "mouse_recenter_gap",              0,           NULL          ),

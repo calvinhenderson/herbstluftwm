@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <X11/extensions/shape.h>
 
 // public globals:
 HSDecTriple g_decorations[HSDecSchemeCount];
@@ -502,6 +503,9 @@ void decoration_redraw_pixmap(struct HSClient* client) {
     Window win = client->dec.decwin;
     Rectangle outer = client->dec.last_outer_rect;
     unsigned int depth = client->dec.depth;
+
+    int *rad = &(settings_find("window_radius")->value.i);
+
     // TODO: maybe do something like pixmap recreate threshhold?
     bool recreate_pixmap = (dec->pixmap == 0) || (dec->pixmap_width != outer.width)
                                               || (dec->pixmap_height != outer.height);
@@ -566,7 +570,94 @@ void decoration_redraw_pixmap(struct HSClient* client) {
                        inner.width,
                        inner.height - dec->last_actual_rect.height);
     }
+
+    // MASK
+    int bw = s.border_width;
+
+    int dia = *rad * 2;
+
+    // TODO: BORDER DISPLAY IS NOT OFFSET PROPERLY
+
+    int x = outer.x;
+    int y = outer.y;
+    int w = outer.width;
+    int h = outer.height;
+
+    int barcs[][6] = {
+        { x,       y,       dia, dia, 0, 360 << 6 },
+        { x,       y+h-dia, dia, dia, 0, 360 << 6 },
+        { x+w-dia, y,       dia, dia, 0, 360 << 6 },
+        { x+w-dia, y+h-dia, dia, dia, 0, 360 << 6 },
+    };
+
+    XRectangle brects[] = {
+        { *rad, 0, w-dia, h },
+        { 0, *rad, w, h-dia }
+    };
+
+    *rad -= bw; dia = *rad * 2;
+
+    int carcs[][6] = {
+        { x+bw,    y+bw,    dia, dia, 0, 360 << 6 },
+        { x+bw,    y+h-dia, dia, dia, 0, 360 << 6 },
+        { x+w-dia, y+bw,    dia, dia, 0, 360 << 6 },
+        { x+w-dia, y+h-dia, dia, dia, 0, 360 << 6 },
+    };
+
+    XRectangle crects[] = {
+        { bw+*rad, bw,     w-dia-bw, h        },
+        { bw,     bw+*rad, w,        h-dia-bw },
+    };
+
+    // BEGIN MASKING
+
+    Pixmap bpid = XCreatePixmap(g_display, win, outer.width+2*bw, outer.height+2*bw, 1);
+    Pixmap cpid = XCreatePixmap(g_display, win, outer.width,      outer.height,      1);
+
+    GC bgc = XCreateGC(g_display, bpid, 0, NULL);
+    GC cgc = XCreateGC(g_display, cpid, 0, NULL);
+
+    XRectangle bounding = { -bw, -bw, w+2*bw, h+2*bw };
+    XSetForeground(g_display, bgc, 0);
+    XFillRectangle(g_display, bpid, bgc, bounding.x, bounding.y, bounding.width, bounding.height);
+
+    XSetForeground(g_display, bgc, 1);
+    XFillRectangles(g_display, bpid, bgc, brects, LENGTH(brects));
+    for (int i=0; i < sizeof(barcs)/sizeof(barcs[0]); ++i) {
+        XFillArc(g_display, bpid, bgc,
+            barcs[i][0], barcs[i][1],
+            barcs[i][2], barcs[i][3],
+            barcs[i][4], barcs[i][5]);
+    }
+
+    XRectangle clipping = { 0, 0, w, h };
+    XSetForeground(g_display, cgc, 0);
+    XFillRectangle(g_display, cpid, cgc, clipping.x, clipping.y, clipping.width, clipping.height);
+
+    XSetForeground(g_display, cgc, 1);
+    XFillRectangles(g_display, cpid, cgc, crects, LENGTH(crects));
+    for (int i=0; i < sizeof(carcs)/sizeof(carcs[0]); ++i) {
+        XFillArc(g_display, cpid, cgc,
+            carcs[i][0], carcs[i][1],
+            carcs[i][2], carcs[i][3],
+            carcs[i][4], carcs[i][5]);
+    }
+
+    // Mask
+    XShapeCombineMask(g_display, win, ShapeBounding, -bw, -bw, bpid, ShapeSet);
+    XShapeCombineMask(g_display, win, ShapeClip,     0,   0,   cpid, ShapeSet);
+    XShapeCombineMask(g_display, client->window, ShapeClip,     0,   0,   cpid, ShapeSet);
+
+    XSetForeground(g_display, gc, get_client_color(client, s.border_color));
+    XFillRectangle(g_display, win, gc, 0, 0, outer.width, outer.height);
+
+    // clean up masks
+    XFreePixmap(g_display, bpid);
+    XFreePixmap(g_display, cpid);
+
     // clean up
+    XFreeGC(g_display, bgc);
+    XFreeGC(g_display, cgc);
     XFreeGC(g_display, gc);
 }
 
